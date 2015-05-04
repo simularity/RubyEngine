@@ -1,0 +1,78 @@
+Loading data into the Simularity HPCE using RubyEngine is fairly simple.
+
+The HPCE stores all its information in the form of triples, of the form
+
+subject action object
+
+The subject is a pair, the Subject Type, and the Subject Item, both of which are integers.
+The object is a similar pair, the Object Type and the Object Item. Subject and Object types
+are exclusive, thus, it is perfectly OK to use 1 as both a subject and object type.
+
+The subject can be thought of as a "record" id - it groups together objects that apply to the
+same context. Most often, it is a combination of a context ID and a Time Stamp. The context
+ID is the Device, Channel, or Item that the record refers to. If you were building a book
+recommendation engine, then the Context ID would be the user, the time stamp would be the
+day the rating was made, the object would be the book rated, and the action would be the
+rating, say in 1 to 5 stars. An additional object would be added for the timestamp (alone,
+without the context id - this helps enable querying), as well as an object for the context id
+(again alone, to enable better querying)
+
+If the subject is the record id, then object types are the column name, and object ids are
+the column values (It is important to realize that this is not a relational database, and the
+HPCE's triplestore differs significantly from RDBSs, however, it does share some concepts).
+Each object associated with a subject is added to the subject. Given the book recommender
+example above, the actions to add the book might be. Note that the action 10 represents
+"property of" and the action 5 is "rating 5 stars" 
+
+time = Time.now.to_i
+subj_id = engine.build_subject("context", 'Ray Richardson', time)
+
+engine.apply(1, subj, 10, "timestamp", time)
+engine.apply(1, subj, 10, "context", "Ray Richardson")
+engine.apply(1, subj, 5, "rating", "Stranger in a Strange Land")
+
+This creates a record with 3 fields - timestamp, context and rating. In theory, it could
+contain any number of these, although timestamp and context don't make sense if not
+singular. There could be multiple ratings, however. The temporal query models of the HPCE
+allow us to tie together subjects that have a certain temporal relationship.
+
+Note that Object IDs as well as subject and object types, and actions can be specified as
+strings as well as numbers. For Subject and Object Types, and also Object IDs, if they are
+specified as a string, the HPCE will make up an id for them. There are methods for accessing
+these IDs. Action strings must be defined in the HPCE configuration file. Actions can always
+be specified as an integer (between 1 and 0x7f). Types, both subject and object can be
+specified by integers between 1 and 0x3fff (Floating point objects are defined for types
+numbered 0x4000 to 0x7fff) 
+
+To use the RubyEngine, first require the engine class
+
+require './Engine'
+
+
+Then, create an Engine instance. One instance is needed for each thread that
+loads data
+
+engine = Engine.new("engine.server.com", 3000)
+
+Note that 3000 is the default server port for the HPCE, and it is the default
+parameter
+
+Once an engine instance is created and connected to the HPCE, just iterate over your
+data source to get the record rows, and transfer them to the engine using 'apply'
+
+File.foreach('data.csv') do |linestring|
+	if linestring then
+	   line = linestring.chomp.split(',')
+	   # assume the first field is the subject
+	   (1 .. line.length-1).each do |index|
+	      engine.apply(1, line[0], 1, index, line[index])
+	   end
+	end
+end
+
+
+This code iterates over data.csv adding triples to the HPCE with the first field as
+the subject (with subject type 1), and fields 1..n as objects, with the index as object
+type. Most loaders are more complex than this, but that is mostly in the derivation of
+object and subject items, not the interaction with the engine
+

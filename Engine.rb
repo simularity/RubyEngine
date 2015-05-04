@@ -375,5 +375,21 @@ class Engine
       seg.flush
     end
   end
+
+  # build a subject from a context and a stamp, within a fixed number of bits
+  # We assume the context is an object type
+  def build_subject(otype, context, stamp, stampbits)
+    ot = get_otype(otype)
+    ctx = get_object(context, 'object', ot)
+    mask = 2 ** stampbits - 1
+    if (stamp & mask) != stamp then
+      raise "Stamp #{stamp} too big for mask #{mask}"
+    end
+    item = (ctx << stampbits) | stamp
+    if !item_check(item) then
+      raise "Subject #{context} and #{stamp} too big for itemsize #{@max_item}"
+    end
+    item
+  end
 end
 
