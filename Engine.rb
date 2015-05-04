@@ -1,10 +1,72 @@
+# The Engine class is used to connect to the Simularity High Performance
+# Correlation Engine, and can be used to load data into the engine
+#
+# Author::      Ray Richardson (mailto:ray@simularity.com)
+# Copyright::   Copyright 2011 - 2015 Simularity, Inc.
+# License::     MIT License
+
 require 'socket'
 require 'net/http/persistent'
 require 'json'
 
+
 class Engine
+  private 
+  # The Segment class internally manages the segment connection, and the webservice
+  # transaction which loads/deletes data
+  class Segment
+    # Initialize with a host, port and number of items to cache before sending
+    def initialize(host, port, range=10000)
+      @host = host
+      @port = port
+      @range = range
+      @data = "["
+      @count = 0
+      @http = Net::HTTP::Persistent.new 'rubyloader'
+    end
+
+    # apply a subject/action/object triple
+    def apply_subj(st, si, a, ot, oi)
+      if @data != "[" then
+        @data << ","
+      end
+      @data << "triple(subject(#{st},#{si}),#{a},object(#{ot},#{oi}))"
+      @count = @count + 1
+      if @count >= @range then
+        flush
+      end
+    end
+
+    # apply an object/action/subject triple
+    def apply_obj(ot, oi, a, st, si)
+      if @data != "[" then
+        @data << ","
+      end
+      @data << "triple(object(#{ot},#{oi}), #{a}, subject(#{st},#{si}))"
+      @count = @count + 1
+      if @count >= @range then
+        flush
+      end
+    end
+
+    # send the data to the segment
+    def flush
+      @data << "]"
+      @count = 0
+      uri = URI "http://#{@host}:#{@port}/load_data"
+      post = Net::HTTP::Post.new uri.path
+      post.body = @data
+      @data = "["
+      response = @http.request uri, post
+      json = JSON.parse(response.body)
+      if json["status"] != 0 then
+        puts json
+      end
+    end
+  end
   
-# These parameters are for the "server" instance of the engine
+  public
+# These parameters are for the "server" instance of the engine (typically Segment 0)
   def initialize(host="localhost", port=3000)
     @open = false
     open(host, port)
@@ -14,6 +76,10 @@ class Engine
     @actions = {}
   end
 
+  # open connects this instance to the instance of the engine, retrieving the
+  # description of the engine's segment structure and initializing the data
+  # structures needed to communicate with it. It does not clear the records of names
+  # Types, Objects or Actions - these persist throughout the lifetime of this instance
   def open(host, port)
     if @open then
       close
@@ -35,22 +101,40 @@ class Engine
       @sockets = Array.new
       segments = segjson["segments"]
       segments.each do | seg |
-        @segments << [seg["segment"], seg["host"], seg["port"]]
-        @sockets << TCPSocket.open(seg["host"], seg["port"])
+#        @segments << [seg["segment"], seg["host"], seg["port"]]
+#        @sockets << TCPSocket.open(seg["host"], seg["port"])
+        @segments << Segment.new(seg["host"], seg["sport"])
         @nsegs = @nsegs+1
       end
     else
       raise "Could Not retrieve Segments from server"
     end
-
+    # Get the ItemSize
+    begin
+      url_str = "http://#{host}:#{port}/itemsize"
+      uri = URI(url_str)
+      szstr = Net::HTTP.get(uri)
+      szjson = JSON.parse(szstr)
+      if szjson["status"] == 0 then
+        @max_item = szjson["max"]
+        @min_item = szjson["min"]
+      else
+        @max_item = 0xffffffff
+        @min_item = 0
+      end
+    rescue
+      @max_item = 0xffffffff
+      @min_item = 0
+    end
     @scount = 0
     @snilcount = 0
   end
 
+  # Check that an item id is in range for the engine we're connected to 
   def item_check(item)
     if item.is_a?(Integer) then
-      if item > 0
-        if item <= 0xffffffff
+      if item >= @min_item
+        if item <= @max_item
           return true
         end
       end
@@ -58,6 +142,7 @@ class Engine
     return false
   end
 
+  # Check that at type is in range
   def type_check(type)
     if type.is_a?(Integer) then
       if type > 0
@@ -69,10 +154,11 @@ class Engine
     return false
   end
 
+  # check that an action is in range
   def action_check(action)
-    if type.is_a?(Integer) then
-      if type > 0 then
-        if type <= 0x1fff then
+    if action.is_a?(Integer) then
+      if action > 0 then
+        if action <= 0x7f then
           return true;
         end
       end
@@ -80,6 +166,7 @@ class Engine
     return false
   end
 
+  # return a subject type id for a symbol
   def get_stype(symbol)
     if ! symbol then
       return 0
@@ -109,6 +196,7 @@ class Engine
   end
 
 
+  # return a type id for an object type
   def get_otype(symbol)
     if ! symbol then
       return 0
@@ -137,6 +225,7 @@ class Engine
     end
   end
 
+  # return the id for an action
   def get_action(symbol)
     if ! symbol then
       return 0
@@ -165,6 +254,7 @@ class Engine
     end
   end
 
+  # transform a symbol so it contains underscores insted of spaces
   def no_spaces(name)
     if name.is_a?(String) then
       name.gsub(' ', '_')
@@ -172,6 +262,8 @@ class Engine
       name
     end
   end
+
+  # get an object id by type specification
   def get_object(name, typeclass, type)
 
     if ! name then
@@ -201,6 +293,8 @@ class Engine
     
         
 
+  # Add a triple to the connected engine. This routine adds to both the
+  # subjective and objective segment
   def apply(stype, sitem, action, otype, oitem)
 
 #    pstype = prologify(stype)
@@ -217,15 +311,17 @@ class Engine
 
 #    message = "linear(triples:add_triple_sym(#{pstype}, #{psitem}, #{paction}, #{potype}, #{poitem})).\n"
     
-    message1 = "triplestore:add_triple_element(subject(#{stypenum}, #{sitemnum}), #{actionnum}, object(#{otypenum}, #{oitemnum})).\n"
-    message2 = "triplestore:add_triple_element(object(#{otypenum}, #{oitemnum}), #{actionnum}, subject(#{stypenum}, #{sitemnum})).\n"
+#    message1 = "triplestore:add_triple_element(subject(#{stypenum}, #{sitemnum}), #{actionnum}, object(#{otypenum}, #{oitemnum})).\n"
+#    message2 = "triplestore:add_triple_element(object(#{otypenum}, #{oitemnum}), #{actionnum}, subject(#{stypenum}, #{sitemnum})).\n"
 
     seg1 = oitemnum % @nsegs
     seg2 = sitemnum % @nsegs
   
     if (stype != nil) && (sitem != nil) && (action != nil) && (otype != nil) && (oitem != nil) then
-      @sockets[seg1].write(message1)
-      @sockets[seg2].write(message2)
+#      @sockets[seg1].write(message1)
+#      @sockets[seg2].write(message2)
+      @segments[seg1].apply_subj(stypenum, sitemnum, actionnum, otypenum, oitemnum)
+      @segments[seg2].apply_obj(otypenum, oitemnum, actionnum, stypenum, sitemnum)
       @scount = @scount+1
       if @scount % 10000 == 0 then
         puts(@scount)
@@ -235,10 +331,11 @@ class Engine
     end
   end
 
-  def set_object(objName, objTypeSpec, objID)
-    message = "dyn_objects:set_object(#{prologify(objName)}, #{objTypeSpec}, #{objID}).\n"
-    @sockets[0].write(message)
-  end
+  
+#  def set_object(objName, objTypeSpec, objID)
+#    message = "dyn_objects:set_object(#{prologify(objName)}, #{objTypeSpec}, #{objID}).\n"
+#    @sockets[0].write(message)
+#  end
 
   # prologify makes sure that a string is properly quoted and escaped for quotes, etc
   def prologify(string)
@@ -253,19 +350,30 @@ class Engine
     return result
   end
 
-  def sendall(term_str)
-    @sockets.each do | socket |
-              socket.puts term_str
-            end
-    end
+#  def sendall(term_str)
+#    @sockets.each do | socket |
+#              socket.puts term_str
+#            end
+#    end
 
+
+  # Close the connection. Does not invalidate type/object/action symbol associations
   def close
     if @open then
-      @sockets.each do | socket |
-        socket.close
-      end
+#      @sockets.each do | socket |
+#        socket.close
+#       end
+      flush
       @open = false;
       @nsegs = 0
     end
   end
+
+  # emit cached data
+  def flush
+    @segments.each do |seg|
+      seg.flush
+    end
+  end
 end
+
