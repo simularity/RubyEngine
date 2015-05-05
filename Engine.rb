@@ -541,5 +541,18 @@ class Engine
     end
   end
 
+  # Empty the triplestore
+  def empty
+    uri = URI("http://#{@host}:#{@port}/empty")
+    jsonstr = Net::HTTP.get(uri)
+    json = JSON.parse(jsonstr)
+    
+    if json["status"] == 0 then
+      return true
+    else
+      return false
+    end
+  end
+
 end
 
