@@ -49,31 +49,85 @@ class Engine
       end
     end
 
+    # delete a subject/object triple (action not specified)
+    def delete_subj(st, si, ot, oi)
+      if @data != "[" then
+        @data << ","
+      end
+      @data << "triple(subject(#{st},#{si}),object(#{ot},#{oi}))"
+      @count = @count + 1
+      if @count >= @range then
+        flush
+      end
+    end
+
+    # delete an object/subject triple
+    def delete_obj(ot, oi, st, si)
+      if @data != "[" then
+        @data << ","
+      end
+      @data << "triple(object(#{ot},#{oi}), subject(#{st},#{si}))"
+      @count = @count + 1
+      if @count >= @range then
+        flush
+      end
+    end
+
     # send the data to the segment
     def flush
       @data << "]"
       @count = 0
-      uri = URI "http://#{@host}:#{@port}/load_data"
-      post = Net::HTTP::Post.new uri.path
-      post.body = @data
+      done = nil
+      while !done
+        uri = URI "http://#{@host}:#{@port}/load_data"
+        post = Net::HTTP::Post.new uri.path
+        post.body = @data
+
+        response = @http.request uri, post
+        json = JSON.parse(response.body)
+        if json["status"] == 0 then
+          done = true
+        else
+          sleep 0.5
+          puts "Error Flushing Data to Segment"
+        end
+      end
       @data = "["
-      response = @http.request uri, post
-      json = JSON.parse(response.body)
-      if json["status"] != 0 then
-        puts json
+    end
+  end
+
+
+  class IterationPrinter
+    def initialize(cycle)
+      @cycle = cycle
+      @count = 0
+    end
+
+    def operate(st, si, a, ot, oi)
+      @count = @count + 1
+      if @count % @cycle == 0 then
+        puts @count
       end
     end
   end
   
   public
 # These parameters are for the "server" instance of the engine (typically Segment 0)
-  def initialize(host="localhost", port=3000)
+  def initialize(host="localhost", port=3000, range=10000)
     @open = false
+    @range = range
     open(host, port)
     @obj_names = {}
     @subjects = {}
     @objects = {}
     @actions = {}
+    @http = Net::HTTP::Persistent.new 'rubyloader'
+    @operator = nil
+
+  end
+
+  def set_operator(op)
+    @operator = op if op.respond_to?(:operate) || (op == nil)
   end
 
   # open connects this instance to the instance of the engine, retrieving the
@@ -103,7 +157,7 @@ class Engine
       segments.each do | seg |
 #        @segments << [seg["segment"], seg["host"], seg["port"]]
 #        @sockets << TCPSocket.open(seg["host"], seg["port"])
-        @segments << Segment.new(seg["host"], seg["sport"])
+        @segments << Segment.new(seg["host"], seg["sport"], @range)
         @nsegs = @nsegs+1
       end
     else
@@ -323,9 +377,7 @@ class Engine
       @segments[seg1].apply_subj(stypenum, sitemnum, actionnum, otypenum, oitemnum)
       @segments[seg2].apply_obj(otypenum, oitemnum, actionnum, stypenum, sitemnum)
       @scount = @scount+1
-      if @scount % 10000 == 0 then
-        puts(@scount)
-      end
+      @operator.operate(stypenum, sitemnum, actionnum, otypenum, oitemnum) if @operator
     else
       @snilcount = @snilcount + 1
     end
@@ -391,5 +443,103 @@ class Engine
     end
     item
   end
+
+  # delete all the subjects (and their objects) based on an Engine Expression
+  # this deletes every subject regardless of type or action characteristics
+  def delete_expression(expr_str)
+    done = nil
+    while !done
+      
+      uri = URI "http://#{@host}:#{@port}/expr_receivers?stype=all&action=all"
+      post = Net::HTTP::Post.new uri
+      post.body = expr_str
+
+    
+      response = @http.request uri, post
+      json = JSON.parse(response.body)
+      if json["status"].to_i != 0 then
+        raise "HPCE not present"
+      end
+
+      subjects = json["receivers"]
+      if subjects.length > 0 then
+        if subjects[0]["class"] != "subject" then
+          raise "Delete Expression does not specify Subjects"
+        end
+
+        first = subjects[0]["item"]
+        last = subjects[subjects.length - 1]["item"]
+
+        subjects.each do |subj_json|
+
+          delete_subject(subj_json["type"].to_i, subj_json["item"].to_i)
+        end
+      else
+        done = true
+      end
+    end
+  end
+
+  # delete all triples based in the specified subject
+  def delete_subject(type, item)
+    done = nil
+    while !done
+      
+      uri = URI "http://#{@host}:#{@port}/expr_receivers?otype=all&action=all"
+      post = Net::HTTP::Post.new uri
+      post.body = "subject(#{type},#{item})"
+    
+      response = @http.request uri, post
+      json = JSON.parse(response.body)
+      if json["status"].to_i != 0 then
+        raise "HPCE not present"
+      end
+
+      objects = json["receivers"]
+      if objects.length > 0 then
+        objects.each do |obj_json|
+          delete_triple(type, item, obj_json["type"].to_i, obj_json["item"].to_i)
+        end
+        flush
+      else
+        done = true
+      end
+    end
+  end
+
+  def delete_triple(st, si, ot, oi)
+    sseg = si % @nsegs
+    oseg = oi % @nsegs
+
+    @segments[oseg].delete_subj(st, si, ot, oi)
+    @segments[sseg].delete_obj(ot, oi, st, si)
+  end
+
+  # Cause the triplestore to serialize itself across all segment
+  def save
+    uri = URI("http://#{@host}:#{@port}/save")
+    jsonstr = Net::HTTP.get(uri)
+    json = JSON.parse(jsonstr)
+    
+    if json["status"] == 0 then
+      return true
+    else
+      return false
+    end
+  end
+
+  # Cause the triplestore to load data from all segments serialization
+  def load
+    uri = URI("http://#{@host}:#{@port}/restore")
+    jsonstr = Net::HTTP.get(uri)
+    json = JSON.parse(jsonstr)
+    
+    if json["status"] == 0 then
+      return true
+    else
+      return false
+    end
+  end
+
 end
 
