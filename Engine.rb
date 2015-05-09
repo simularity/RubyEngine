@@ -517,6 +517,7 @@ class Engine
 
   # Cause the triplestore to serialize itself across all segment
   def save
+    flush
     uri = URI("http://#{@host}:#{@port}/save")
     jsonstr = Net::HTTP.get(uri)
     json = JSON.parse(jsonstr)
