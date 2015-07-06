@@ -6,7 +6,6 @@
 # License::     MIT License
 
 require 'socket'
-#require 'net/http/persistent'
 require 'typhoeus'
 require 'json'
 
@@ -38,7 +37,6 @@ class Engine
       @range = range
       @data = "["
       @count = 0
-#      @http = Net::HTTP::Persistent.new 'rubyloader'
     end
 
     # apply a subject/action/object triple
@@ -88,19 +86,16 @@ class Engine
         flush
       end
     end
-
+    def set_host(host)
+      @host = host
+    end
     # send the data to the segment
     def flush
       @data << "]"
       @count = 0
       done = nil
       while !done
-#        uri = URI "http://#{@host}:#{@port}/load_data"
         url_str = "http://#{@host}:#{@port}/load_data"
-#        post = Net::HTTP::Post.new uri.request_uri
-#        post.body = @data
-
-#        response = @http.request uri, post
         response = Typhoeus::post(url_str, body: @data)
         json = JSON.parse(response.body)
         if json["status"] == 0 then
@@ -134,7 +129,6 @@ class Engine
   def initialize(host="localhost", port=3000, range=10000)
     @open = false
     @range = range
-#    @http = Net::HTTP::Persistent.new 'rubyloader'
     open(host, port)
     @obj_names = {}
     @subjects = {}
@@ -163,26 +157,14 @@ class Engine
 # Connect and get the segments
     url_str = "http://#{host}:#{port}/segments"
     puts url_str
-#    uri = URI(url_str)
-
-#        get = Net::HTTP::Get.new uri.request_uri
-
-#        response = @http.request uri, get
     response = Typhoeus::get(url_str)
         segjson = JSON.parse(response.body)
-
-
-#    segstr = Net::HTTP.get(uri)
-#    segjson = JSON.parse(segstr)
-    
     @nsegs = 0
     if segjson["status"] == 0 then
       @segments = Array.new
       @sockets = Array.new
       segments = segjson["segments"]
       segments.each do | seg |
-#        @segments << [seg["segment"], seg["host"], seg["port"]]
-#        @sockets << TCPSocket.open(seg["host"], seg["port"])
         @segments << Segment.new(seg["host"], seg["sport"], @range)
         @nsegs = @nsegs+1
       end
@@ -192,16 +174,9 @@ class Engine
     # Get the ItemSize
     begin
       url_str = "http://#{host}:#{port}/itemsize"
-#      uri = URI(url_str)
-#        get = Net::HTTP::Get.new uri.request_uri
-
-#        response = @http.request uri, get
       response = Typhoeus::get(url_str)
-        szjson = JSON.parse(response.body)
-
-
-#      szstr = Net::HTTP.get(uri)
-#      szjson = JSON.parse(szstr)
+      szjson = JSON.parse(response.body)
+      
       if szjson["status"] == 0 then
         @max_item = szjson["max"]
         @min_item = szjson["min"]
@@ -217,6 +192,10 @@ class Engine
     @snilcount = 0
   end
 
+  def set_segment_host(segment, host)
+    @segments[segment].set_host(host)
+  end
+  
   # Check that an item id is in range for the engine we're connected to 
   def item_check(item)
     if item.is_a?(Integer) then
@@ -268,19 +247,11 @@ class Engine
       end
     end
 
-# if we get here we have to go to the server
-#    uri = URI("http://#{@host}:#{@port}/convert_type?name=#{symbol}&class=subject")
     url_str = "http://#{@host}:#{@port}/convert_type?name=#{symbol}&class=subject"
-#    get = Net::HTTP::Get.new uri.request_uri
-
-#    response = @http.request uri, get
     response = Typhoeus::get(url_str)
     json = JSON.parse(response.body)
 
 
-#    jsonstr = Net::HTTP.get(uri)
-#    json = JSON.parse(jsonstr)
-    
     if json["status"] == 0 then
       value = json["id"].to_i
       @subjects[symbol] = value
@@ -307,17 +278,10 @@ class Engine
     end
 
 # if we get here we have to go to the server
-#    uri = URI("http://#{@host}:#{@port}/convert_type?name=#{symbol}&class=object")
     url_str = "http://#{@host}:#{@port}/convert_type?name=#{symbol}&class=object"
-#        get = Net::HTTP::Get.new uri.request_uri
-
-#        response = @http.request uri, get
     response = Typhoeus::get(url_str)
         json = JSON.parse(response.body)
 
-#    jsonstr = Net::HTTP.get(uri)
-#    json = JSON.parse(jsonstr)
-    
     if json["status"] == 0 then
       value = json["id"].to_i
       @objects[symbol] = value
@@ -343,16 +307,9 @@ class Engine
 
 # if we get here we have to go to the server
     url = "http://#{@host}:#{@port}/convert_action?name=#{symbol}"
-#    uri = URI(url)
-#        get = Net::HTTP::Get.new uri.request_uri
-
-#        response = @http.request uri, get
     response = Typhoeus::get(url)
         json = JSON.parse(response.body)
 
-#    jsonstr = Net::HTTP.get(uri)
-#    json = JSON.parse(jsonstr)
-    
     if json["status"] == 0 then
       value = json["id"].to_i
       @actions[symbol] = value
@@ -385,17 +342,10 @@ class Engine
       result = @obj_names[[name, typeclass, type]]
       if ! result then
 #        esc = URI.escape("http://#{@host}:#{@port}/convert_object?class=#{typeclass}&name=#{name}&type=#{type}")
-#        uri = URI(esc)
-
-#        get = Net::HTTP::Get.new uri.request_uri
-
-#        response = @http.request uri, get
         url_str = "http://#{@host}:#{@port}/convert_object?class=#{typeclass}&name=#{name}&type=#{type}"
         response = Typhoeus::get(url_str)
         json = JSON.parse(response.body)
 
-#        jsonstr = Net::HTTP.get(uri)
-#        json = JSON.parse(jsonstr)
         if json["status"] = 0 then
           result = json["id"].to_i
           @obj_names[[name, typeclass, type]] = result
@@ -413,32 +363,19 @@ class Engine
   # subjective and objective segment
   def apply(stype, sitem, action, otype, oitem)
 
-#    pstype = prologify(stype)
-#    psitem = prologify(sitem)
-#    paction = prologify(action)
-#    potype = prologify(otype)
-#    poitem = prologify(oitem)
-
     stypenum = get_stype(stype)
     sitemnum = get_object(sitem, "subject", stypenum)
     actionnum = get_action(action)
     otypenum = get_otype(otype)
     oitemnum = get_object(oitem, "object", otypenum)
 
-#    message = "linear(triples:add_triple_sym(#{pstype}, #{psitem}, #{paction}, #{potype}, #{poitem})).\n"
-    
-#    message1 = "triplestore:add_triple_element(subject(#{stypenum}, #{sitemnum}), #{actionnum}, object(#{otypenum}, #{oitemnum})).\n"
-#    message2 = "triplestore:add_triple_element(object(#{otypenum}, #{oitemnum}), #{actionnum}, subject(#{stypenum}, #{sitemnum})).\n"
-
-    # Hash and modulo against a prime. We should build our own hash algorithm
+    # Hash and modulo against a prime. This uses Engine.hash_item
     # So it can be constant across loaders, for now, we use the built in ruby
     # one (which makes all integers odd - hence the prime constant)
     seg1 = Engine.hash_item(oitemnum) % @nsegs
     seg2 = Engine.hash_item(sitemnum) % @nsegs
   
     if (stype != nil) && (sitem != nil) && (action != nil) && (otype != nil) && (oitem != nil) then
-#      @sockets[seg1].write(message1)
-#      @sockets[seg2].write(message2)
       @segments[seg1].apply_subj(stypenum, sitemnum, actionnum, otypenum, oitemnum)
       @segments[seg2].apply_obj(otypenum, oitemnum, actionnum, stypenum, sitemnum)
       @scount = @scount+1
@@ -449,11 +386,6 @@ class Engine
   end
 
   
-#  def set_object(objName, objTypeSpec, objID)
-#    message = "dyn_objects:set_object(#{prologify(objName)}, #{objTypeSpec}, #{objID}).\n"
-#    @sockets[0].write(message)
-#  end
-
   # prologify makes sure that a string is properly quoted and escaped for quotes, etc
   def prologify(string)
     #All we really need to do, is make sure we substitute \' for ' in the string itself
@@ -467,19 +399,9 @@ class Engine
     return result
   end
 
-#  def sendall(term_str)
-#    @sockets.each do | socket |
-#              socket.puts term_str
-#            end
-#    end
-
-
   # Close the connection. Does not invalidate type/object/action symbol associations
   def close
     if @open then
-#      @sockets.each do | socket |
-#        socket.close
-#       end
       flush
       @open = false;
       @nsegs = 0
@@ -515,13 +437,7 @@ class Engine
     done = nil
     while !done
       
-#      uri = URI "http://#{@host}:#{@port}/expr_receivers?stype=all&action=all"
       url_str = "http://#{@host}:#{@port}/expr_receivers?stype=all&action=all"
-#      post = Net::HTTP::Post.new uri
-#      post.body = expr_str
-
-  
-#      response = @http.request uri, post
       response = Typhoeus::post(url_str, body: expr_str)
       json = JSON.parse(response.body)
       if json["status"].to_i != 0 then
@@ -552,13 +468,9 @@ class Engine
     done = nil
     while !done
       
-#      uri = URI "http://#{@host}:#{@port}/expr_receivers?otype=all&action=all"
       url_str = "http://#{@host}:#{@port}/expr_receivers?otype=all&action=all"
-#      post = Net::HTTP::Post.new uri
-#      post.body = "subject(#{type},#{item})"
       body = "subject(#{type},#{item})"
     
-#      response = @http.request uri, post
       response = Typhoeus::post(url_str, body: body)
       json = JSON.parse(response.body)
       if json["status"].to_i != 0 then
@@ -588,17 +500,10 @@ class Engine
   # Cause the triplestore to serialize itself across all segment
   def save
     flush
-#    uri = URI("http://#{@host}:#{@port}/save")
     url_str = "http://#{@host}:#{@port}/save"
-#        get = Net::HTTP::Get.new uri.request_uri
-
-#        response = @http.request uri, get
     response = Typhoeus::get(url_str)
         json = JSON.parse(response.body)
 
-#    jsonstr = Net::HTTP.get(uri)
-#    json = JSON.parse(jsonstr)
-    
     if json["status"] == 0 then
       return true
     else
@@ -608,17 +513,10 @@ class Engine
 
   # Cause the triplestore to load data from all segments serialization
   def load
-#    uri = URI("http://#{@host}:#{@port}/restore")
-#        get = Net::HTTP::Get.new uri.request_uri
-
-#        response = @http.request uri, get
     url_str = "http://#{@host}:#{@port}/restore"
     response = Typhoeus::get(url_str)
         json = JSON.parse(response.body)
 
-#    jsonstr = Net::HTTP.get(uri)
-#    json = JSON.parse(jsonstr)
-    
     if json["status"] == 0 then
       return true
     else
@@ -628,17 +526,10 @@ class Engine
 
   # Empty the triplestore
   def empty
-#    uri = URI("http://#{@host}:#{@port}/empty")
-#        get = Net::HTTP::Get.new uri.request_uri
-
-#        response = @http.request uri, get
     url_str = "http://#{@host}:#{@port}/empty"
     response = Typhoeus::get(url_str)
         json = JSON.parse(response.body)
 
-#    jsonstr = Net::HTTP.get(uri)
-#    json = JSON.parse(jsonstr)
-    
     if json["status"] == 0 then
       return true
     else
