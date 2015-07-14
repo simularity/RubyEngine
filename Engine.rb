@@ -8,7 +8,7 @@
 require 'socket'
 require 'typhoeus'
 require 'json'
-
+require 'open-uri'
 
 class Engine
   def self.hashString(string) 
@@ -246,8 +246,8 @@ class Engine
         return lookup
       end
     end
-
-    url_str = "http://#{@host}:#{@port}/convert_type?name=#{symbol}&class=subject"
+    
+    url_str = "http://#{@host}:#{@port}/convert_type?name=#{URI::encode(symbol)}&class=subject"
     response = Typhoeus::get(url_str)
     json = JSON.parse(response.body)
 
@@ -278,7 +278,7 @@ class Engine
     end
 
 # if we get here we have to go to the server
-    url_str = "http://#{@host}:#{@port}/convert_type?name=#{symbol}&class=object"
+    url_str = "http://#{@host}:#{@port}/convert_type?name=#{URI::encode(symbol)}&class=object"
     response = Typhoeus::get(url_str)
         json = JSON.parse(response.body)
 
@@ -341,8 +341,7 @@ class Engine
     else
       result = @obj_names[[name, typeclass, type]]
       if ! result then
-#        esc = URI.escape("http://#{@host}:#{@port}/convert_object?class=#{typeclass}&name=#{name}&type=#{type}")
-        url_str = "http://#{@host}:#{@port}/convert_object?class=#{typeclass}&name=#{name}&type=#{type}"
+        url_str = "http://#{@host}:#{@port}/convert_object?class=#{typeclass}&name=#{URI::encode(name)}&type=#{type}"
         response = Typhoeus::get(url_str)
         json = JSON.parse(response.body)
 
