@@ -96,7 +96,7 @@ class Engine
       done = nil
       while !done
         url_str = "http://#{@host}:#{@port}/load_data"
-        response = Typhoeus::post(url_str, body: @data)
+        response = Typhoeus.post(url_str, body: @data)
         json = JSON.parse(response.body)
         if json["status"] == 0 then
           done = true
@@ -157,8 +157,8 @@ class Engine
 # Connect and get the segments
     url_str = "http://#{host}:#{port}/segments"
     puts url_str
-    response = Typhoeus::get(url_str)
-        segjson = JSON.parse(response.body)
+    response = Typhoeus.get(url_str)
+    segjson = JSON.parse(response.body)
     @nsegs = 0
     if segjson["status"] == 0 then
       @segments = Array.new
@@ -174,7 +174,7 @@ class Engine
     # Get the ItemSize
     begin
       url_str = "http://#{host}:#{port}/itemsize"
-      response = Typhoeus::get(url_str)
+      response = Typhoeus.get(url_str)
       szjson = JSON.parse(response.body)
       
       if szjson["status"] == 0 then
@@ -248,7 +248,7 @@ class Engine
     end
     
     url_str = "http://#{@host}:#{@port}/convert_type?name=#{URI::encode(symbol)}&class=subject"
-    response = Typhoeus::get(url_str)
+    response = Typhoeus.get(url_str)
     json = JSON.parse(response.body)
 
 
@@ -279,7 +279,7 @@ class Engine
 
 # if we get here we have to go to the server
     url_str = "http://#{@host}:#{@port}/convert_type?name=#{URI::encode(symbol)}&class=object"
-    response = Typhoeus::get(url_str)
+    response = Typhoeus.get(url_str)
         json = JSON.parse(response.body)
 
     if json["status"] == 0 then
@@ -307,7 +307,7 @@ class Engine
 
 # if we get here we have to go to the server
     url = "http://#{@host}:#{@port}/convert_action?name=#{symbol}"
-    response = Typhoeus::get(url)
+    response = Typhoeus.get(url)
         json = JSON.parse(response.body)
 
     if json["status"] == 0 then
@@ -342,7 +342,7 @@ class Engine
       result = @obj_names[[name, typeclass, type]]
       if ! result then
         url_str = "http://#{@host}:#{@port}/convert_object?class=#{typeclass}&name=#{URI::encode(name)}&type=#{type}"
-        response = Typhoeus::get(url_str)
+        response = Typhoeus.get(url_str)
         json = JSON.parse(response.body)
 
         if json["status"] = 0 then
@@ -437,7 +437,7 @@ class Engine
     while !done
       
       url_str = "http://#{@host}:#{@port}/expr_receivers?stype=all&action=all"
-      response = Typhoeus::post(url_str, body: expr_str)
+      response = Typhoeus.post(url_str, body: expr_str)
       json = JSON.parse(response.body)
       if json["status"].to_i != 0 then
         raise "HPCE not present"
@@ -470,7 +470,7 @@ class Engine
       url_str = "http://#{@host}:#{@port}/expr_receivers?otype=all&action=all"
       body = "subject(#{type},#{item})"
     
-      response = Typhoeus::post(url_str, body: body)
+      response = Typhoeus.post(url_str, body: body)
       json = JSON.parse(response.body)
       if json["status"].to_i != 0 then
         raise "HPCE not present"
@@ -500,7 +500,7 @@ class Engine
   def save
     flush
     url_str = "http://#{@host}:#{@port}/save"
-    response = Typhoeus::get(url_str)
+    response = Typhoeus.get(url_str)
         json = JSON.parse(response.body)
 
     if json["status"] == 0 then
@@ -513,7 +513,7 @@ class Engine
   # Cause the triplestore to load data from all segments serialization
   def load
     url_str = "http://#{@host}:#{@port}/restore"
-    response = Typhoeus::get(url_str)
+    response = Typhoeus.get(url_str)
         json = JSON.parse(response.body)
 
     if json["status"] == 0 then
@@ -526,7 +526,7 @@ class Engine
   # Empty the triplestore
   def empty
     url_str = "http://#{@host}:#{@port}/empty"
-    response = Typhoeus::get(url_str)
+    response = Typhoeus.get(url_str)
         json = JSON.parse(response.body)
 
     if json["status"] == 0 then
